@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity >=0.8.7;
+pragma solidity >=0.8.0;
 
 import "@chainlink/contracts/src/v0.8/AutomationCompatible.sol";
 
@@ -40,8 +40,8 @@ contract BTCVault is AutomationCompatibleInterface {
     // =============================================================
 
     struct Vault {
-        uint256 amountAmerG;
-        uint256 amountBTC;
+        uint256 amountToken;
+        uint256 amountBitcoin;
         uint256 collateralPercentage;
         uint256 lastPaidTimestamp;
         uint256 accInterest;
@@ -58,8 +58,8 @@ contract BTCVault is AutomationCompatibleInterface {
 
     uint256[6] public interestRates = [25, 99, 199, 299, 399, 449]; 
     
-    IERC20 public constant BTC   = IERC20(0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599); // Wrapped BTC
-    IERC20 public constant AMERG = IERC20(/* amerG address here */); 
+    IERC20 public constant BTC   = IERC20(0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599); // Wrapped Bitcoin
+    IERC20 public constant TOKEN = IERC20(0x0000000000000000000000000000000000000000); // Replace
     AggregatorV3Interface 
     private 
     constant 
@@ -71,8 +71,8 @@ contract BTCVault is AutomationCompatibleInterface {
     mapping(uint256 => Vault)     public vaults;
     mapping(address => uint256[]) private _vaultIds;
     
-    event VaultCreated(uint256 indexed id, uint256 amountAmerG, uint256 time);
-    event VaultDeposit(uint256 indexed id, uint256 amountAmerG, uint256 amountBTC, uint256 time);
+    event VaultCreated(uint256 indexed id, uint256 amountToken, uint256 time);
+    event VaultDeposit(uint256 indexed id, uint256 amountToken, uint256 amountBitcoin, uint256 time);
     event InterestPaid(uint256 indexed id, uint256 amountPaid, uint256 time);
     event InterestCollected(uint256 btcCollected, uint256 time);
 
@@ -88,21 +88,21 @@ contract BTCVault is AutomationCompatibleInterface {
     // =============================================================
 
     /**
-     * @notice Creates a new vault and mints `amountAmerG` tokens to the caller
-     * @param amountBTC amount of wrapped BTC to deposit
-     * @param amountAmerG amount of tokens to be minted
+     * @notice Creates a new vault and mints `amountToken` tokens to the caller
+     * @param amountBitcoin amount of wrapped BTC to deposit
+     * @param amountToken amount of tokens to be minted
      *
      * Requirements:
      *
-     * - `amountBTC` sent should produce a collateral percentage within the specified range
-     * - `amountAmerG` should be greater than zero
-     * - Caller must approve `amountBTC` beforehand
+     * - `amountBitcoin` sent should produce a collateral percentage within the specified range
+     * - `amountToken` should be greater than zero
+     * - Caller must approve `amountBitcoin` beforehand
      *
      */
-    function createVault(uint256 amountBTC, uint256 amountAmerG) external {
-        if(amountBTC == 0 || amountAmerG == 0) revert INVALID_AMOUNT();
+    function createVault(uint256 amountBitcoin, uint256 amountToken) external {
+        if(amountBitcoin == 0 || amountToken == 0) revert INVALID_AMOUNT();
 
-        uint256 collateralPercentage = (amountBTC * _getRate() * 10000) / amountAmerG; 
+        uint256 collateralPercentage = (amountBitcoin * _getRate() * 10000) / amountToken; 
 
         if(
             collateralPercentage < minimumCollateralPercentage || collateralPercentage > maximumCollateralPercentage
@@ -115,8 +115,8 @@ contract BTCVault is AutomationCompatibleInterface {
         }
 
         vaults[vaultId] = Vault(
-            amountAmerG, 
-            amountBTC, 
+            amountToken, 
+            amountBitcoin, 
             collateralPercentage, 
             block.timestamp, 
             0,
@@ -127,41 +127,41 @@ contract BTCVault is AutomationCompatibleInterface {
 
         if(vaults[nextInterestPaymentId].lastPaidTimestamp == 0) nextInterestPaymentId = vaultId;
 
-        BTC.transferFrom(msg.sender, address(this), amountBTC);
-        AMERG.mint(msg.sender, amountAmerG);
+        BTC.transferFrom(msg.sender, address(this), amountBitcoin);
+        TOKEN.mint(msg.sender, amountToken);
 
-        emit VaultCreated(vaultId, amountAmerG, block.timestamp);
+        emit VaultCreated(vaultId, amountToken, block.timestamp);
     }
     
     /**
      * @notice Deposit BTC to `vaultId`
-     * `amountAmerG` tokens minted to caller
+     * `amountToken` tokens minted to caller
      *
      * @param vaultId id of vault to deposit to
-     * @param amountBTC amount of wrapped BTC to deposit
-     * @param amountAmerG amount of tokens to be minted
+     * @param amountBitcoin amount of wrapped BTC to deposit
+     * @param amountToken amount of tokens to be minted
      * 
      * Requirements:
      * 
-     * - `amountBTC` should be greater than zero
-     * - `amountAmerG` should be greater than zero
+     * - `amountBitcoin` should be greater than zero
+     * - `amountToken` should be greater than zero
      * - Caller must be vault owner
      * - New collateral % must be within valid range
      *
      */
-    function depositToVault(uint256 vaultId, uint256 amountBTC, uint256 amountAmerG) external {
-        if(amountBTC == 0 || amountAmerG == 0) revert INVALID_AMOUNT();
+    function depositToVault(uint256 vaultId, uint256 amountBitcoin, uint256 amountToken) external {
+        if(amountBitcoin == 0 || amountToken == 0) revert INVALID_AMOUNT();
         Vault storage vault = vaults[vaultId];
 
         if(msg.sender != vault.account) 
             revert INVALID_CALLER();
 
-        uint256 totalAmerG = vault.amountAmerG + amountAmerG;
-        uint256 totalBTC = vault.amountBTC + amountBTC;
+        uint256 totalToken = vault.amountToken + amountToken;
+        uint256 totalBTC = vault.amountBitcoin + amountBitcoin;
         uint256 newCollateralPercentage;
 
         unchecked { 
-            newCollateralPercentage = (totalBTC * _getRate() * 10000) / totalAmerG;
+            newCollateralPercentage = (totalBTC * _getRate() * 10000) / totalToken;
         }
 
         if(newCollateralPercentage < minimumCollateralPercentage 
@@ -170,14 +170,14 @@ contract BTCVault is AutomationCompatibleInterface {
         vault.accInterest = totalInterest(vaultId);
         vault.lastPaidTimestamp = block.timestamp;
 
-        vault.amountAmerG = totalAmerG;
-        vault.amountBTC = totalBTC;
+        vault.amountToken = totalToken;
+        vault.amountBitcoin = totalBTC;
         vault.collateralPercentage = newCollateralPercentage;
         
-        BTC.transferFrom(msg.sender, address(this), amountBTC);
-        AMERG.mint(msg.sender, amountAmerG);
+        BTC.transferFrom(msg.sender, address(this), amountBitcoin);
+        TOKEN.mint(msg.sender, amountToken);
 
-        emit VaultDeposit(vaultId, amountAmerG, amountBTC, block.timestamp);
+        emit VaultDeposit(vaultId, amountToken, amountBitcoin, block.timestamp);
     }
 
     /**
@@ -187,7 +187,7 @@ contract BTCVault is AutomationCompatibleInterface {
      * Requirements:
      *
      * - `vaultId` must have unpaid interest
-     * - Caller must have approved sufficient amerG tokens beforehand
+     * - Caller must have approved sufficient Token tokens beforehand
      *
      * NOTE: Caller is not required to be the owner of `vaultId`
      *
@@ -202,37 +202,37 @@ contract BTCVault is AutomationCompatibleInterface {
         if(vaultId == nextInterestPaymentId) 
             _increment();
 
-        AMERG.transferFrom(msg.sender, _cold, amount);
+        TOKEN.transferFrom(msg.sender, _cold, amount);
 
         emit InterestPaid(vaultId, amount, block.timestamp);
     }
 
     /**
-     * @notice Reimburse portion of borrowed amerG tokens
+     * @notice Reimburse portion of borrowed Token tokens
      * @param vaultId id of vault to reimburse
-     * @param amount amount of amerG to reimburse
+     * @param amount amount of Token to reimburse
      *
      * Requirements:
      *
      * - Caller must be owner of `vaultId`
      * - `amount` must be non zero and less than or equal to initially borrowed amount
-     * - `amount` of amerG must have been approved beforehand
+     * - `amount` of Token must have been approved beforehand
      *
      */
     function reimburse(uint256 vaultId, uint256 amount) external { 
         Vault storage vault = vaults[vaultId];
         if(msg.sender != vault.account) revert INVALID_CALLER();
 
-        if(amount == 0 || amount > vault.amountAmerG) revert INVALID_AMOUNT();
+        if(amount == 0 || amount > vault.amountToken) revert INVALID_AMOUNT();
 
         vault.accInterest = totalInterest(vaultId);
         vault.lastPaidTimestamp = block.timestamp;
         
         unchecked {
-            vault.amountAmerG = vault.amountAmerG - amount;
+            vault.amountToken = vault.amountToken - amount;
         }
 
-        AMERG.burn(msg.sender, amount);
+        TOKEN.burn(msg.sender, amount);
     }
 
     /**
@@ -255,13 +255,13 @@ contract BTCVault is AutomationCompatibleInterface {
             collateralPercentage < minimumCollateralPercentage || collateralPercentage > maximumCollateralPercentage
         ) revert INVALID_COLLATERAL();
 
-        uint256 total = (_getRate() * vault.amountBTC * 10000) / collateralPercentage;
+        uint256 total = (_getRate() * vault.amountBitcoin * 10000) / collateralPercentage;
         uint256 fee;
         uint256 claimable;
 
         unchecked {
-            fee = (vault.amountAmerG * refinanceFeePercentage) / 100;
-            claimable = total - vault.amountAmerG - fee;
+            fee = (vault.amountToken * refinanceFeePercentage) / 100;
+            claimable = total - vault.amountToken - fee;
         }
         
         if(claimable == 0) revert ZERO_AMOUNT();
@@ -271,13 +271,13 @@ contract BTCVault is AutomationCompatibleInterface {
         vault.collateralPercentage = collateralPercentage;
 
         unchecked {
-            vault.amountAmerG = vault.amountAmerG + claimable;
+            vault.amountToken = vault.amountToken + claimable;
         }
 
 
-        AMERG.transferFrom(msg.sender, _cold, fee);
+        TOKEN.transferFrom(msg.sender, _cold, fee);
         
-        AMERG.mint(msg.sender, claimable);
+        TOKEN.mint(msg.sender, claimable);
     }
     
 
@@ -312,14 +312,14 @@ contract BTCVault is AutomationCompatibleInterface {
             block.timestamp - vault.lastPaidTimestamp > 90 days
         ) 
         {
-            uint256 interestQuantity = totalInterest(nextInterestPaymentId) / _getRate() * 100;
+            uint256 qty = totalInterest(nextInterestPaymentId) / (_getRate() * 100);
 
-            vault.amountBTC = vault.amountBTC - interestQuantity;
+            vault.amountBitcoin = vault.amountBitcoin - qty;
             vault.lastPaidTimestamp = block.timestamp;
             vault.accInterest = 0;
 
             unchecked {
-                 totalCollectableInterest = totalCollectableInterest + interestQuantity;
+                 totalCollectableInterest = totalCollectableInterest + qty;
             }
 
             _increment();
@@ -339,7 +339,7 @@ contract BTCVault is AutomationCompatibleInterface {
     function totalInterest(uint vaultId) public view returns (uint256) {
         Vault storage vault = vaults[vaultId];
         uint256 perAnnum = (
-            vault.amountAmerG * _findInterestRate(vault.collateralPercentage)
+            vault.amountToken * _findInterestRate(vault.collateralPercentage)
         ) / 10000;
 
         uint256 currentInterest = (perAnnum * (block.timestamp - vault.lastPaidTimestamp)) / 365 days;
@@ -461,23 +461,14 @@ contract BTCVault is AutomationCompatibleInterface {
     }
 
     /**
-     * @notice Sends `amount` of `token` to cold wallet
-     * Can be used to withdraw tokens in case they get stuck in the contract
-     *
-     */
-    function withdrawTokens(address token, uint256 amount) external payable auth {
-        IERC20(token).transfer(_cold, amount);
-    }
-
-    /**
      * @notice Refund wrapped BTC for `vaultId`
      *
      */
-    function refundBTC(uint256 vaultId) external payable auth {
-        uint256 currentBalance = vaults[vaultId].amountBTC;
+    function refund(uint256 vaultId) external payable auth {
+        uint256 currentBalance = vaults[vaultId].amountBitcoin;
         if(currentBalance == 0) revert ZERO_AMOUNT();
         
-        vaults[vaultId].amountBTC = 0;
+        vaults[vaultId].amountBitcoin = 0;
     
         BTC.transfer(vaults[vaultId].account, currentBalance);
     }
