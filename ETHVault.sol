@@ -181,7 +181,7 @@ contract ETHVault is AutomationCompatibleInterface {
      * Requirements:
      *
      * - `vaultId` must have unpaid interest
-     * - Caller must have approved sufficient amerG tokens beforehand
+     * - Caller must have approved sufficient tokens beforehand
      *
      * NOTE: Caller is not required to be the owner of `vaultId`
      *
@@ -203,15 +203,15 @@ contract ETHVault is AutomationCompatibleInterface {
     }
 
     /**
-     * @notice Reimburse portion of borrowed amerG tokens
+     * @notice Reimburse portion of borrowed tokens
      * @param vaultId id of vault to reimburse
-     * @param amount amount of amerG to reimburse
+     * @param amount amount of tokens to reimburse
      *
      * Requirements:
      *
      * - Caller must be owner of `vaultId`
      * - `amount` must be non zero and less than or equal to initially borrowed amount
-     * - `amount` of amerG must have been approved beforehand
+     * - `amount` of token must have been approved beforehand
      *
      */
     function reimburse(uint256 vaultId, uint256 amount) external payable { 
