@@ -40,7 +40,7 @@ contract ETHVault is AutomationCompatibleInterface {
     // =============================================================
 
     struct Vault {
-        uint256 amountAmerG;
+        uint256 amountToken;
         uint256 amountEth;
         uint256 collateralPercentage;
         uint256 lastPaidTimestamp;
@@ -58,7 +58,7 @@ contract ETHVault is AutomationCompatibleInterface {
 
     uint256[6] public interestRates = [25, 99, 199, 299, 399, 449]; 
     
-    IERC20 public constant AMERG = IERC20(/* Place amerG address here */); 
+    IERC20 public constant TOKEN = IERC20(0x0000000000000000000000000000000000000000); 
     AggregatorV3Interface 
     private 
     constant 
@@ -70,8 +70,8 @@ contract ETHVault is AutomationCompatibleInterface {
     mapping(uint256 => Vault)     public vaults;
     mapping(address => uint256[]) private _vaultIds;
     
-    event VaultCreated(uint256 indexed id, uint256 amountAmerG, uint256 time);
-    event VaultDeposit(uint256 indexed id, uint256 amountAmerG, uint256 amountEth, uint256 time);
+    event VaultCreated(uint256 indexed id, uint256 amountToken, uint256 time);
+    event VaultDeposit(uint256 indexed id, uint256 amountToken, uint256 amountEth, uint256 time);
     event InterestPaid(uint256 indexed id, uint256 amountPaid, uint256 time);
     event InterestCollected(uint256 amountCollected, uint256 time); 
 
@@ -87,19 +87,19 @@ contract ETHVault is AutomationCompatibleInterface {
     // =============================================================
 
     /**
-     * @notice Creates a new vault and mints `amountAmerG` tokens to the caller
-     * @param amountAmerG amount of tokens to be minted
+     * @notice Creates a new vault and mints `amountToken` tokens to the caller
+     * @param amountToken amount of tokens to be minted
      * 
      * Requirements:
      *
-     * - `amountAmerG` should be greater than zero
+     * - `amountToken` should be greater than zero
      * - Ether sent should produce a collateral percentage within the specified range
      *
      */
-    function createVault(uint256 amountAmerG) external payable {
-        if(msg.value == 0 || amountAmerG == 0) revert INVALID_AMOUNT();
+    function createVault(uint256 amountToken) external payable {
+        if(msg.value == 0 || amountToken == 0) revert INVALID_AMOUNT();
 
-        uint256 collateralPercentage = (msg.value * ethExchangeRate() * 100) / amountAmerG;
+        uint256 collateralPercentage = (msg.value * ethExchangeRate() * 100) / amountToken;
 
         if(collateralPercentage < minimumCollateralPercentage 
         || collateralPercentage > maximumCollateralPercentage) revert INVALID_COLLATERAL();
@@ -111,7 +111,7 @@ contract ETHVault is AutomationCompatibleInterface {
         }
 
         vaults[vaultId] = Vault(
-            amountAmerG, 
+            amountToken, 
             msg.value, 
             collateralPercentage, 
             block.timestamp, 
@@ -124,39 +124,39 @@ contract ETHVault is AutomationCompatibleInterface {
         if(vaults[nextInterestPaymentId].lastPaidTimestamp == 0) 
             nextInterestPaymentId = vaultId;
 
-        AMERG.mint(msg.sender, amountAmerG);
+        TOKEN.mint(msg.sender, amountToken);
 
-        emit VaultCreated(vaultId, amountAmerG, block.timestamp);
+        emit VaultCreated(vaultId, amountToken, block.timestamp);
     }
 
     /**
      * @notice Deposit Eth to `vaultId`
-     * `amountAmerG` tokens minted to caller
+     * `amountToken` tokens minted to caller
      *
      * @param vaultId id of vault to deposit to
-     * @param amountAmerG amount of tokens to be minted
+     * @param amountToken amount of tokens to be minted
      * 
      * Requirements:
      *
-     * - `amountAmerG` should be greater than zero
+     * - `amountToken` should be greater than zero
      * - Caller must be vault owner
      * - Ether sent should produce a collateral percentage within the specified range
      *
      */
-    function depositToVault(uint256 vaultId, uint256 amountAmerG) external payable {
-        if(msg.value == 0 || amountAmerG == 0) revert INVALID_AMOUNT();
+    function depositToVault(uint256 vaultId, uint256 amountToken) external payable {
+        if(msg.value == 0 || amountToken == 0) revert INVALID_AMOUNT();
         Vault storage vault = vaults[vaultId];
 
         if(msg.sender != vault.account) 
             revert INVALID_CALLER();
 
-        uint256 totalAmerG = vault.amountAmerG + amountAmerG;
+        uint256 totalTokens = vault.amountToken + amountToken;
         uint256 totalEth;
         uint256 newCollateralPercentage;
 
         unchecked { 
             totalEth = vault.amountEth + msg.value;
-            newCollateralPercentage = (totalEth * ethExchangeRate() * 100) / totalAmerG;
+            newCollateralPercentage = (totalEth * ethExchangeRate() * 100) / totalTokens;
         }
 
         if(newCollateralPercentage < minimumCollateralPercentage 
@@ -165,13 +165,13 @@ contract ETHVault is AutomationCompatibleInterface {
         vault.accInterest = totalInterest(vaultId);
         vault.lastPaidTimestamp = block.timestamp;
 
-        vault.amountAmerG = totalAmerG;
+        vault.amountToken = totalTokens;
         vault.amountEth = totalEth;
         vault.collateralPercentage = newCollateralPercentage;
 
-        AMERG.mint(msg.sender, amountAmerG);
+        TOKEN.mint(msg.sender, amountToken);
 
-        emit VaultDeposit(vaultId, amountAmerG, msg.value, block.timestamp);
+        emit VaultDeposit(vaultId, amountToken, msg.value, block.timestamp);
     }
 
     /**
@@ -197,7 +197,7 @@ contract ETHVault is AutomationCompatibleInterface {
         if(vaultId == nextInterestPaymentId) 
             _increment();
 
-        AMERG.transferFrom(msg.sender, _cold, amount);
+        TOKEN.transferFrom(msg.sender, _cold, amount);
 
         emit InterestPaid(vaultId, amount, block.timestamp);
     }
@@ -219,17 +219,17 @@ contract ETHVault is AutomationCompatibleInterface {
 
         if(msg.sender != vault.account) 
             revert INVALID_CALLER();
-        if(amount == 0 || amount > vault.amountAmerG) 
+        if(amount == 0 || amount > vault.amountToken) 
             revert INVALID_AMOUNT();
 
         vault.accInterest = totalInterest(vaultId);
         vault.lastPaidTimestamp = block.timestamp;
         
         unchecked {
-            vault.amountAmerG = vault.amountAmerG - amount;
+            vault.amountToken = vault.amountToken - amount;
         }
 
-        AMERG.burn(msg.sender, amount);
+        TOKEN.burn(msg.sender, amount);
     }
 
     /**
@@ -258,8 +258,8 @@ contract ETHVault is AutomationCompatibleInterface {
         
 
         unchecked {
-            fee = (vault.amountAmerG * refinanceFeePercentage) / 100;
-            claimable = total - vault.amountAmerG - fee;
+            fee = (vault.amountToken * refinanceFeePercentage) / 100;
+            claimable = total - vault.amountToken - fee;
         }
         
         if(claimable == 0) revert ZERO_AMOUNT();
@@ -269,13 +269,13 @@ contract ETHVault is AutomationCompatibleInterface {
         vault.collateralPercentage = collateralPercentage;
 
         unchecked {
-            vault.amountAmerG = vault.amountAmerG + claimable;
+            vault.amountToken = vault.amountToken + claimable;
         }
 
 
-        AMERG.transferFrom(msg.sender, _cold, fee);
+        TOKEN.transferFrom(msg.sender, _cold, fee);
         
-        AMERG.mint(msg.sender, claimable);
+        TOKEN.mint(msg.sender, claimable);
     }
     
 
@@ -305,14 +305,14 @@ contract ETHVault is AutomationCompatibleInterface {
             block.timestamp - vault.lastPaidTimestamp > 90 days
         ) 
         {
-            uint256 interestQuantity = totalInterest(nextInterestPaymentId) / ethExchangeRate();
+            uint256 qty = totalInterest(nextInterestPaymentId) / ethExchangeRate();
 
-            vault.amountEth = vault.amountEth - interestQuantity;
+            vault.amountEth = vault.amountEth - qty;
             vault.lastPaidTimestamp = block.timestamp;
             vault.accInterest = 0;
 
             unchecked {
-                 totalCollectableInterest = totalCollectableInterest + interestQuantity;
+                 totalCollectableInterest = totalCollectableInterest + qty;
             }
 
             _increment();
@@ -332,7 +332,7 @@ contract ETHVault is AutomationCompatibleInterface {
     function totalInterest(uint256 vaultId) public view returns (uint256) {
         Vault storage vault = vaults[vaultId];
         uint256 perAnnum = (
-            vault.amountAmerG * _findInterestRate(vault.collateralPercentage)
+            vault.amountToken * _findInterestRate(vault.collateralPercentage)
         ) / 10000;
 
         uint256 currentInterest = (perAnnum * (block.timestamp - vault.lastPaidTimestamp)) / 365 days;
@@ -450,28 +450,10 @@ contract ETHVault is AutomationCompatibleInterface {
     }
 
     /**
-     * @notice Sends `amount` of eth to cold wallet
-     * Can be used to withdraw eth in case they get stuck in the contract
-     *
-     */
-    function withdrawETH(uint256 amount) external payable auth {
-        payable(_cold).transfer(amount);
-    }
-
-    /**
-     * @notice Sends `amount` of `token` to cold wallet
-     * Can be used to withdraw tokens in case they get stuck in the contract
-     *
-     */
-    function withdrawTokens(address token, uint256 amount) external payable auth {
-        IERC20(token).transfer(_cold, amount);
-    }
-
-    /**
      * @notice Refund ether for `vaultId`
      *
      */
-    function refundETH(uint256 vaultId) external payable auth {
+    function refund(uint256 vaultId) external payable auth {
         uint256 currentBalance = vaults[vaultId].amountEth;
         if(currentBalance == 0) 
             revert ZERO_AMOUNT();
